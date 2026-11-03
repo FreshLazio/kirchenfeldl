@@ -36,6 +36,14 @@ export function createScores({ file = null, upstash = null } = {}) {
       for (const vs of Object.values(data.free || {})) for (const b of Object.values(vs)) for (const e of Object.values(b)) claim0(e.n, e.dev);
     }
     data.devNick ||= {};
+    // einmalig: alle alten Einträge OHNE Rundenverlauf löschen (ab jetzt hat jeder Eintrag einen) · Profile/Nicknames bleiben
+    if (!data.logEra) {
+      for (const ds of Object.values(data.days)) for (const d of Object.keys(ds)) ds[d] = ds[d].filter(e => e.l);
+      for (const vs of Object.values(data.free || {})) for (const b of Object.values(vs)) for (const k of Object.keys(b)) if (!b[k].l) delete b[k];
+      data.best = {}; data.users = {};
+      for (const [k, ds] of Object.entries(data.days)) for (const [d, list] of Object.entries(ds)) for (const e of list) userAdd(k, e.n, e.s, d, e.l);
+      data.logEra = 1; save();
+    }
     // Bestwert jeder Person pro Modus (für «Insgesamt» und die Spieler-Ansicht) – aus alten Daten nachbauen, falls noch nicht da
     if (!data.users) {
       data.users = {};
@@ -43,16 +51,20 @@ export function createScores({ file = null, upstash = null } = {}) {
       for (const [k, list] of Object.entries(data.best)) for (const e of list) { const u = data.users[k]?.[e.n.toLowerCase()]; if (!u) userAdd(k, e.n, e.s, e.d); else if (e.s > u.s) Object.assign(u, { n: e.n, s: e.s, d: e.d }); }
     }
   }
-  function userAdd(kind, nick, score, day) {
+  // l: Rundenverlauf des Bestwerts (bleibt auch, wenn der Tag nach 60 Tagen gelöscht wird)
+  function userAdd(kind, nick, score, day, l) {
     const us = (data.users[kind] ||= {}), k = nick.toLowerCase(), u = us[k];
-    if (!u) us[k] = { n: nick, s: score, d: day, g: 1 };
-    else { u.g = (u.g || 1) + 1; if (score > u.s) Object.assign(u, { n: nick, s: score, d: day }); }
+    if (!u) us[k] = { n: nick, s: score, d: day, g: 1, l: l || undefined };
+    else { u.g = (u.g || 1) + 1; if (score > u.s) Object.assign(u, { n: nick, s: score, d: day, l: l || undefined }); }
   }
   // Rundenverlauf (was jemand gespielt hat): [{ q: Aufgabe, a: Antwort, p: Punkte, d?: km }] – klein + harmlos halten
   const cleanStr = (s, n) => String(s == null ? '' : s).replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, n);
   const cleanLog = l => (Array.isArray(l) ? l.slice(0, 20).map(x => {
     const o = { q: cleanStr(x && x.q, 80), a: cleanStr(x && x.a, 50), p: Math.max(0, Math.min(50000, Math.round(+(x && x.p)) || 0)) };
     const d = +(x && x.d); if (Number.isFinite(d) && d >= 0 && d < 50000) o.d = Math.round(d);
+    // Karte: t = Ziel [lat, lon], g = eigener Tipp [lat, lon]
+    const ll = v => (Array.isArray(v) && Math.abs(+v[0]) <= 90 && Math.abs(+v[1]) <= 540 ? [+(+v[0]).toFixed(3), +(+v[1]).toFixed(3)] : null);
+    const tt = ll(x && x.t), gg = ll(x && x.g); if (tt) o.t = tt; if (gg) o.g = gg;
     return o;
   }) : null);
   const dayEntry = (kind, day, nick) => (data.days[kind]?.[day] || []).find(e => e.n.toLowerCase() === String(nick).toLowerCase());
@@ -63,7 +75,7 @@ export function createScores({ file = null, upstash = null } = {}) {
     for (const k of kinds) {
       const today = (data.days[k]?.[day] || []), best = usersOf(k);
       if (!today.length && !best.length) continue;
-      out[k] = { today: today.slice(0, ALL).map(e => ({ nick: e.n, score: e.s, log: e.l ? 1 : 0 })), total: today.length, best: best.slice(0, ALL).map(e => ({ nick: e.n, score: e.s, day: e.d, games: e.g || 1, log: dayEntry(k, e.d, e.n)?.l ? 1 : 0 })), players: best.length };
+      out[k] = { today: today.slice(0, ALL).map(e => ({ nick: e.n, score: e.s, log: e.l ? 1 : 0 })), total: today.length, best: best.slice(0, ALL).map(e => ({ nick: e.n, score: e.s, day: e.d, games: e.g || 1, log: e.l || dayEntry(k, e.d, e.n)?.l ? 1 : 0 })), players: best.length };
     }
     const days = [...new Set(Object.values(data.days).flatMap(ds => Object.keys(ds)))].sort().reverse();
     return { day, days, kinds: out };
@@ -138,7 +150,7 @@ export function createScores({ file = null, upstash = null } = {}) {
   const cleanNick = s => String(s || '').replace(/[\u0000-\u001f<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 16);
   const view = (kind, day) => ({
     today: (data.days[kind]?.[day] || []).slice(0, TOP).map(e => ({ nick: e.n, score: e.s, log: e.l ? 1 : 0 })),
-    best: usersOf(kind).slice(0, 10).map(e => ({ nick: e.n, score: e.s, day: e.d, log: dayEntry(kind, e.d, e.n)?.l ? 1 : 0 })),   // insgesamt: die 10 besten Personen (je ihr Bestwert)
+    best: usersOf(kind).slice(0, 10).map(e => ({ nick: e.n, score: e.s, day: e.d, log: e.l || dayEntry(kind, e.d, e.n)?.l ? 1 : 0 })),   // insgesamt: die 10 besten Personen (je ihr Bestwert)
     total: (data.days[kind]?.[day] || []).length,
   });
 
@@ -150,7 +162,7 @@ export function createScores({ file = null, upstash = null } = {}) {
     list.sort((a, b) => b.s - a.s || a.t - b.t);
     const best = (data.best[kind] ||= []);
     best.push({ n: nick, s: score, d: day }); best.sort((a, b) => b.s - a.s); best.length = Math.min(best.length, 20);
-    userAdd(kind, nick, score, day);
+    userAdd(kind, nick, score, day, log);
     save();
     return { ok: true, rank: list.findIndex(e => e.n === nick) + 1 };
   }
@@ -181,8 +193,9 @@ export function createScores({ file = null, upstash = null } = {}) {
           return e && e.l ? json(res, 200, { nick: e.n, score: e.s, day: e.d, log: e.l }) : json(res, 404, { error: 'none' });
         }
         if (!KIND.test(kind) || !DAY.test(day)) return json(res, 400, { error: 'bad' });
-        const e = dayEntry(kind, day, nick);
-        if (!e || !e.l) return json(res, 404, { error: 'none' });
+        let e = dayEntry(kind, day, nick);
+        if (!e || !e.l) { const u = data.users[kind]?.[nick.toLowerCase()]; e = u && u.d === day && u.l ? u : null; }   // Bestwert, Tag schon gelöscht
+        if (!e) return json(res, 404, { error: 'none' });
         const live = [0, 1].some(o => new Date(Date.now() + o * 864e5).toISOString().slice(0, 10) === day);   // heute (UTC oder schon morgen in CH) = noch spielbar
         if (live && !(dev && (data.days[kind]?.[day] || []).some(x => x.d === dev))) return json(res, 403, { error: 'play' });
         return json(res, 200, { nick: e.n, score: e.s, day, log: e.l });
