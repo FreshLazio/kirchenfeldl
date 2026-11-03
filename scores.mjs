@@ -48,6 +48,14 @@ export function createScores({ file = null, upstash = null } = {}) {
     if (!u) us[k] = { n: nick, s: score, d: day, g: 1 };
     else { u.g = (u.g || 1) + 1; if (score > u.s) Object.assign(u, { n: nick, s: score, d: day }); }
   }
+  // Rundenverlauf (was jemand gespielt hat): [{ q: Aufgabe, a: Antwort, p: Punkte, d?: km }] – klein + harmlos halten
+  const cleanStr = (s, n) => String(s == null ? '' : s).replace(/[\u0000-\u001f<>]/g, '').trim().slice(0, n);
+  const cleanLog = l => (Array.isArray(l) ? l.slice(0, 20).map(x => {
+    const o = { q: cleanStr(x && x.q, 80), a: cleanStr(x && x.a, 50), p: Math.max(0, Math.min(50000, Math.round(+(x && x.p)) || 0)) };
+    const d = +(x && x.d); if (Number.isFinite(d) && d >= 0 && d < 50000) o.d = Math.round(d);
+    return o;
+  }) : null);
+  const dayEntry = (kind, day, nick) => (data.days[kind]?.[day] || []).find(e => e.n.toLowerCase() === String(nick).toLowerCase());
   const usersOf = kind => Object.values(data.users[kind] || {}).sort((a, b) => b.s - a.s || (a.d < b.d ? -1 : 1));
   // alles auf einmal (Ranglisten-Seite): jeder Modus mit der ganzen Tagesliste und allen Bestwerten pro Person
   const viewAll = day => {
@@ -55,7 +63,7 @@ export function createScores({ file = null, upstash = null } = {}) {
     for (const k of kinds) {
       const today = (data.days[k]?.[day] || []), best = usersOf(k);
       if (!today.length && !best.length) continue;
-      out[k] = { today: today.slice(0, ALL).map(e => ({ nick: e.n, score: e.s })), total: today.length, best: best.slice(0, ALL).map(e => ({ nick: e.n, score: e.s, day: e.d, games: e.g || 1 })), players: best.length };
+      out[k] = { today: today.slice(0, ALL).map(e => ({ nick: e.n, score: e.s, log: e.l ? 1 : 0 })), total: today.length, best: best.slice(0, ALL).map(e => ({ nick: e.n, score: e.s, day: e.d, games: e.g || 1, log: dayEntry(k, e.d, e.n)?.l ? 1 : 0 })), players: best.length };
     }
     const days = [...new Set(Object.values(data.days).flatMap(ds => Object.keys(ds)))].sort().reverse();
     return { day, days, kinds: out };
@@ -63,7 +71,7 @@ export function createScores({ file = null, upstash = null } = {}) {
 
   // ───────── Freies Spiel: Rekordlisten pro Modus + Einstellungen (v = «russia.r5.de.sm.t60») – pro Person nur der Bestwert ─────────
   const freeList = (kind, v) => Object.values(data.free?.[kind]?.[v] || {}).sort((a, b) => b.s - a.s || (a.t || 0) - (b.t || 0));
-  const freeRow = e => ({ nick: e.n, score: e.s, day: e.d, games: e.g || 1 });
+  const freeRow = e => ({ nick: e.n, score: e.s, day: e.d, games: e.g || 1, log: e.l ? 1 : 0 });
   const freeView = (kind, v, nick = '') => {
     const l = freeList(kind, v), i = nick ? l.findIndex(e => e.n.toLowerCase() === nick.toLowerCase()) : -1;
     return { top: l.slice(0, TOP).map(freeRow), players: l.length, rank: i + 1, mine: i >= 0 ? freeRow(l[i]) : null };
@@ -73,7 +81,7 @@ export function createScores({ file = null, upstash = null } = {}) {
     for (const [k, vs] of Object.entries(data.free || {})) for (const v of Object.keys(vs)) { const l = freeList(k, v); if (l.length) ((out[k] ||= {})[v] = { players: l.length, top: l.slice(0, ALL).map(freeRow) }); }
     return { kinds: out };
   };
-  function freeAdd(kind, v, nick, score, dev, day) {
+  function freeAdd(kind, v, nick, score, dev, day, log = null) {
     const b = (((data.free ||= {})[kind] ||= {})[v] ||= {}), key = nick.toLowerCase();
     let u = b[key];
     if (u && u.dev && dev && u.dev !== dev) return { error: 'taken' };   // Nickname gehört in dieser Liste schon einem anderen Gerät
@@ -81,8 +89,8 @@ export function createScores({ file = null, upstash = null } = {}) {
     const old = dev && Object.entries(b).find(([k, e]) => k !== key && e.dev === dev);
     if (!u && old) { u = old[1]; delete b[old[0]]; u.n = nick; b[key] = u; }
     let newBest = false;
-    if (!u) { b[key] = { n: nick, s: score, d: day, g: 1, t: Date.now(), dev: dev || undefined }; newBest = true; }
-    else { u.g = (u.g || 1) + 1; u.n = nick; if (score > u.s) { Object.assign(u, { s: score, d: day, t: Date.now() }); newBest = true; } }
+    if (!u) { b[key] = { n: nick, s: score, d: day, g: 1, t: Date.now(), dev: dev || undefined, l: log || undefined }; newBest = true; }
+    else { u.g = (u.g || 1) + 1; u.n = nick; if (score > u.s) { Object.assign(u, { s: score, d: day, t: Date.now(), l: log || undefined }); newBest = true; } }
     save();
     return { ok: true, newBest };
   }
@@ -129,16 +137,16 @@ export function createScores({ file = null, upstash = null } = {}) {
   const dayOk = d => { const t = Date.now(); return [-1, 0, 1].some(o => new Date(t + o * 864e5).toISOString().slice(0, 10) === d); };
   const cleanNick = s => String(s || '').replace(/[\u0000-\u001f<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, 16);
   const view = (kind, day) => ({
-    today: (data.days[kind]?.[day] || []).slice(0, TOP).map(e => ({ nick: e.n, score: e.s })),
-    best: usersOf(kind).slice(0, 10).map(e => ({ nick: e.n, score: e.s, day: e.d })),   // insgesamt: die 10 besten Personen (je ihr Bestwert)
+    today: (data.days[kind]?.[day] || []).slice(0, TOP).map(e => ({ nick: e.n, score: e.s, log: e.l ? 1 : 0 })),
+    best: usersOf(kind).slice(0, 10).map(e => ({ nick: e.n, score: e.s, day: e.d, log: dayEntry(kind, e.d, e.n)?.l ? 1 : 0 })),   // insgesamt: die 10 besten Personen (je ihr Bestwert)
     total: (data.days[kind]?.[day] || []).length,
   });
 
-  function add(kind, day, nick, score, dev) {
+  function add(kind, day, nick, score, dev, log = null) {
     const list = ((data.days[kind] ||= {})[day] ||= []);
     if (dev && list.some(e => e.d === dev)) return { error: 'device' };   // pro Gerät nur EIN Eintrag (nicht 100 Nicknames)
     if (list.some(e => e.n.toLowerCase() === nick.toLowerCase())) return { error: 'taken' };   // pro Tag ein Eintrag pro Nickname
-    list.push({ n: nick, s: score, t: Date.now(), d: dev || undefined });
+    list.push({ n: nick, s: score, t: Date.now(), d: dev || undefined, l: log || undefined });
     list.sort((a, b) => b.s - a.s || a.t - b.t);
     const best = (data.best[kind] ||= []);
     best.push({ n: nick, s: score, d: day }); best.sort((a, b) => b.s - a.s); best.length = Math.min(best.length, 20);
@@ -162,6 +170,23 @@ export function createScores({ file = null, upstash = null } = {}) {
     if (req.method === 'GET') {
       const kind = u.searchParams.get('kind') || '', day = u.searchParams.get('day') || '';
       // Profil: welcher Nickname gehört zu diesem Gerät / Schlüssel? (für «auf anderem Gerät anmelden»)
+      // Rundenverlauf einer Person ansehen · Tagesrunde von heute nur, wenn DIESES Gerät sie heute selbst schon gespielt hat (kein Spicken)
+      if (u.searchParams.get('log')) {
+        const nick = cleanNick(u.searchParams.get('nick')), dev = cleanDev(u.searchParams.get('dev'));
+        if (!nick) return json(res, 400, { error: 'bad' });
+        if (u.searchParams.get('free')) {
+          const fv = u.searchParams.get('v') || '';
+          if (!FKIND.test(kind) || !FV.test(fv)) return json(res, 400, { error: 'bad' });
+          const e = data.free?.[kind]?.[fv]?.[nick.toLowerCase()];
+          return e && e.l ? json(res, 200, { nick: e.n, score: e.s, day: e.d, log: e.l }) : json(res, 404, { error: 'none' });
+        }
+        if (!KIND.test(kind) || !DAY.test(day)) return json(res, 400, { error: 'bad' });
+        const e = dayEntry(kind, day, nick);
+        if (!e || !e.l) return json(res, 404, { error: 'none' });
+        const live = [0, 1].some(o => new Date(Date.now() + o * 864e5).toISOString().slice(0, 10) === day);   // heute (UTC oder schon morgen in CH) = noch spielbar
+        if (live && !(dev && (data.days[kind]?.[day] || []).some(x => x.d === dev))) return json(res, 403, { error: 'play' });
+        return json(res, 200, { nick: e.n, score: e.s, day, log: e.l });
+      }
       if (u.searchParams.get('me')) { const dev = cleanDev(u.searchParams.get('dev')), l = dev && data.devNick[dev]; return json(res, 200, { nick: l && data.nicks[l] ? data.nicks[l].n : null }); }
       if (u.searchParams.get('free')) {
         if (u.searchParams.get('all')) return json(res, 200, freeAll());
@@ -175,7 +200,7 @@ export function createScores({ file = null, upstash = null } = {}) {
     }
     if (req.method === 'POST') {
       let body = '';
-      for await (const c of req) { body += c; if (body.length > 2000) return json(res, 413, { error: 'big' }); }
+      for await (const c of req) { body += c; if (body.length > 12000) return json(res, 413, { error: 'big' }); }
       let d; try { d = JSON.parse(body); } catch { return json(res, 400, { error: 'bad' }); }
       const kind = String(d.kind || ''), day = String(d.day || ''), nick = cleanNick(d.nick), score = Math.round(+d.score);
       const ip = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || '?';
@@ -194,7 +219,7 @@ export function createScores({ file = null, upstash = null } = {}) {
         if (!nick) return json(res, 400, { error: 'nick' });
         if (!Number.isFinite(score) || score < 0 || score > 200000) return json(res, 400, { error: 'score' });
         if (freeLimited(ip)) return json(res, 429, { error: 'slow' });
-        const r = freeAdd(kind, v, nick, score, cleanDev(d.dev), day);
+        const r = freeAdd(kind, v, nick, score, cleanDev(d.dev), day, cleanLog(d.log));
         return json(res, r.error ? 409 : 200, { ...r, ...freeView(kind, v, nick) });
       }
       if (!KIND.test(kind) || !DAY.test(day) || !dayOk(day)) return json(res, 400, { error: 'day' });
@@ -202,7 +227,7 @@ export function createScores({ file = null, upstash = null } = {}) {
       if (!Number.isFinite(score) || score < 0 || score > MAX(kind)) return json(res, 400, { error: 'score' });
       // (ip: hinter dem Proxy des Hosters steht die echte Adresse in x-forwarded-for)
       if (limited(ip) || dayFull(ip, kind, day)) return json(res, 429, { error: 'slow' });
-      const r = add(kind, day, nick, score, cleanDev(d.dev));
+      const r = add(kind, day, nick, score, cleanDev(d.dev), cleanLog(d.log));
       if (!r.error) dayCount(ip, kind, day);
       return json(res, r.error ? 409 : 200, { ...r, ...view(kind, day) });
     }
