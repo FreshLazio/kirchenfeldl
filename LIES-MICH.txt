@@ -1,0 +1,39 @@
+KIRCHENFELDL ONLINE – so kommt das Spiel ins Internet
+=====================================================
+
+Dieser Ordner IST die Website: Spiel + Mehrspieler-Lobby + Tages-Rangliste (Nickname, wer hat heute am meisten).
+Neu bauen (nach Änderungen am Spiel):   node kirchenfeldl/tools/online-build.mjs
+
+
+WEG A – sofort, vom eigenen PC (kein Konto nötig)
+-------------------------------------------------
+Doppelklick auf  kirchenfeldl\Kirchenfeldl online.bat
+→ baut, startet, zeigt einen Link  https://….trycloudflare.com  (schon kopiert, im Chat Strg+V).
++ gratis, in 1 Minute online
+– nur solange der PC an ist und das Fenster offen bleibt; der Link ist bei jedem Start neu
+– Rangliste liegt in online\data\scores.json
+
+
+WEG B – immer online (gratis, Render + Upstash)
+-----------------------------------------------
+1. GitHub-Konto → neues Repository (z. B. «kirchenfeldl»).
+   «Add file → Upload files»: den ganzen INHALT dieses Ordners hineinziehen
+   (public/, server.mjs, lobby.mjs, scores.mjs, package.json – NICHT den Ordner data/).
+2. Upstash-Konto (upstash.com) → «Create Database» (Redis, Free) → Reiter «REST API»:
+   UPSTASH_REDIS_REST_URL und UPSTASH_REDIS_REST_TOKEN kopieren.
+   (Nötig, weil Render beim Gratis-Plan Dateien beim Neustart vergisst – sonst wäre die Rangliste weg.)
+3. Render-Konto (render.com, mit GitHub anmelden) → «New → Web Service» → das Repository wählen.
+     Runtime:        Node
+     Build Command:  (leer lassen)
+     Start Command:  node server.mjs
+     Plan:           Free
+   Unter «Environment» die beiden Upstash-Werte eintragen (Name genau wie oben).
+4. «Create Web Service» → nach ~2 Min. läuft es unter  https://kirchenfeldl-xyz.onrender.com
+   Update: Ordner neu bauen, Dateien auf GitHub neu hochladen → Render baut automatisch neu.
+
+Gut zu wissen
+- Render Free schläft nach 15 Min. ohne Besuch ein; der erste Aufruf dauert dann ~30–60 s.
+- Mehrspieler: Lobby-Link «LINK KOPIEREN» zeigt automatisch die Online-Adresse.
+- Schummeln: Punkte kommen vom Browser, ein Profi könnte falsche Punkte schicken.
+  Bremse: max. 1 Eintrag pro Nickname/Tag, Obergrenzen, 20 Einträge pro Stunde pro Adresse.
+- Andere Hoster (Railway, Fly.io, eigener Server) gehen auch: Node 20+, «node server.mjs», Port kommt aus PORT.

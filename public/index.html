@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Kirchenfeldl</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Silkscreen:wght@400;700&family=JetBrains+Mono:wght@400;600;800&family=Fraunces:opsz,wght@9..144,500;9..144,800&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+  <script type="module" crossorigin src="/assets/index-CVmPzNbA.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index-Bfx7H0oy.css">
+</head>
+<body>
+<canvas id="bg"></canvas>
+<div id="fx"></div>
+<div id="bubble" class="hidden">IMPRESSED.</div>
+<div id="stamp" class="hidden"></div>
+
+<div id="app">
+  <header id="topbar">
+    <div id="langSwitch" class="chips left">
+      <button data-lang="de" class="chip">DE</button><button data-lang="en" class="chip">EN</button>
+    </div>
+    <span id="modeLabel"></span>
+    <div id="topRight" class="chips">
+      <button id="meBtn" class="chip hidden"></button>
+      <button id="muteBtn" class="chip" title="M"></button>
+    </div>
+  </header>
+  <!-- oben umschalten: Quiz oder Geo-Modus NEARL -->
+  <nav id="gameTabs"><button data-tab="title" class="on">KIRCHENFELDL</button><button data-tab="nearl">NEARL <small>🌍</small></button></nav>
+
+  <!-- ───────── NEARL (Geo) ───────── -->
+  <section id="nearl" class="screen hidden"></section>
+
+  <!-- ───────── TITEL ───────── -->
+  <section id="title" class="screen">
+    <h1 class="logo" data-text="KIRCHENFELDL">KIRCHENFELDL</h1>
+    <p class="tagline" data-i18n="tagline"></p>
+    <p class="sub" data-i18n="sub"></p>
+
+    <div class="menu">
+      <div class="menuHead"><span data-i18n="worldPick"></span><span id="dailyLabel" class="hint"></span></div>
+      <div id="worldRow"></div>
+      <div class="row2 tight">
+        <button id="optsBtn" class="ghostBtn"></button>
+        <button id="catsBtn" class="ghostBtn"></button>
+      </div>
+      <button id="startDaily" class="big"></button>
+      <div class="row2">
+        <button id="startEndless" class="mid"></button>
+        <button id="openMp" class="mid" data-i18n="btnMp"></button>
+      </div>
+      <div id="bestLine" class="best"></div>
+      <div id="dailyLeader" class="best kbLeader"></div>
+      <button id="boardBtn" class="kbOpen hidden"></button>
+      <details class="how">
+        <summary data-i18n="how"></summary>
+        <ol>
+          <li data-i18n="how1"></li><li data-i18n="how2"></li><li data-i18n="how3"></li><li data-i18n="how4"></li><li data-i18n="how5"></li>
+        </ol>
+        <p class="note" data-i18n="dailyNote"></p>
+      </details>
+    </div>
+  </section>
+
+  <!-- ───────── KATEGORIEN ───────── -->
+  <section id="cats" class="screen hidden">
+    <h2 class="h2" data-i18n="catsTitle"></h2>
+    <p class="sub" data-i18n="catsSub"></p>
+    <div class="catTools"><button id="catAll" class="chip2" data-i18n="all"></button><button id="catNone" class="chip2" data-i18n="none"></button><span id="catCount"></span></div>
+    <div id="catGrid"></div>
+    <button class="mid backWide" id="catsBack" data-i18n="back"></button>
+  </section>
+
+  <!-- ───────── SPIELSTIL ───────── -->
+  <section id="opts" class="screen hidden">
+    <h2 class="h2" data-i18n="optsTitle"></h2>
+    <p class="sub" data-i18n="optsSub"></p>
+    <div id="optGroups"></div>
+    <button class="mid backWide" id="optsBack" data-i18n="back"></button>
+  </section>
+
+  <!-- ───────── MEHRSPIELER ───────── -->
+  <section id="mp" class="screen hidden">
+    <h2 class="h2" data-i18n="mpTitle"></h2>
+    <p class="sub" data-i18n="mpSub"></p>
+    <div id="mpJoin" class="panel">
+      <label><small data-i18n="yourName"></small><input id="mpName" maxlength="14" autocomplete="off" spellcheck="false"></label>
+      <small data-i18n="yourColor"></small>
+      <div id="mpColors"></div>
+      <button id="mpCreate" class="mid" data-i18n="create"></button>
+      <div class="joinRow"><input id="mpCode" maxlength="4" autocomplete="off" spellcheck="false"><button id="mpJoinBtn" class="mid" data-i18n="join"></button></div>
+      <div id="mpErr" class="err"></div>
+    </div>
+    <div id="mpLobby" class="panel hidden">
+      <small data-i18n="lobbyCode"></small>
+      <div id="mpCodeBig">----</div>
+      <div id="mpHint" class="sub"></div>
+      <button id="mpCopy" class="mid" data-i18n="copyLink"></button>
+      <div id="mpVs" class="hidden"></div>
+      <ul id="mpPlayers"></ul>
+      <!-- NEARL: Teams schon hier einrichten (vor «Spiel starten») -->
+      <div id="mpLobbyTeams" class="hidden"><div class="opts"></div><div class="cols"></div></div>
+      <div id="mpHostTools">
+        <button id="mpStart" class="big" data-i18n="startGame"></button>
+      </div>
+      <div id="mpWait" class="sub" data-i18n="waitHost"></div>
+      <button id="mpLeave" class="ghost" data-i18n="leave"></button>
+    </div>
+    <!-- Nach «Spiel starten»: der Host stellt Map, Fragenart usw. ein -->
+    <div id="mpSetup" class="panel hidden">
+      <small data-i18n="setupTitle"></small>
+      <div id="mpModeRow" class="chips"><button class="chip" data-mpmode="quiz">KIRCHENFELDL</button><button class="chip" data-mpmode="nearl">NEARL 🌍</button></div>
+      <div id="mpQuizSetup">
+        <div id="mpWorldRow"></div>
+        <div class="row2 tight">
+          <button id="mpOpts" class="ghostBtn"></button>
+          <button id="mpCats" class="ghostBtn"></button>
+        </div>
+      </div>
+      <div id="mpNearlSetup" class="hidden">
+        <div id="mpNearlOpts"></div>
+        <div id="mpTeams" class="hidden"></div>
+      </div>
+      <div id="mpFacts" class="facts"></div>
+      <button id="mpGo" class="big" data-i18n="letsGo"></button>
+      <button id="mpSetupBack" class="ghost" data-i18n="back"></button>
+    </div>
+    <button class="ghost" id="mpBack" data-i18n="back"></button>
+  </section>
+
+  <!-- ───────── SPIEL ───────── -->
+  <section id="game" class="screen hidden">
+    <div class="hud">
+      <div class="box"><small id="hMetricLbl"></small><b id="hMetric">0</b></div>
+      <div class="prog"><div id="pips"></div><small id="progLabel"></small></div>
+      <div class="box right"><small data-i18n="points"></small><b id="hScore" class="pink">0</b></div>
+    </div>
+    <div id="route"><div id="routeLine"></div></div>
+    <div id="floorTag"></div>
+    <div id="streak" class="hidden"></div>
+    <ol id="liveBoard" class="hidden"></ol>
+
+    <div id="stage">
+      <div id="travel" class="hidden"><b id="travelPts"></b><small id="travelTo"></small></div>
+      <div id="card" class="card">
+        <small id="qMeta"></small>
+        <p id="qText"></p>
+        <span id="qHint" data-i18n="cardHint"></span>
+      </div>
+      <div id="result" class="hidden">
+        <div id="rTier"></div>
+        <div id="rAnswer"></div>
+        <div id="rFix"></div>
+        <div id="rPts"></div>
+        <div id="rSub"></div>
+        <div id="rAlt"></div>
+        <div id="rWait" class="sub"></div>
+        <ul id="rReveal" class="hidden"></ul>
+        <button id="nextBtn" class="mid"></button>
+      </div>
+    </div>
+
+    <div id="countdown" class="hidden"></div>
+    <div id="briefing" class="facts hidden"></div>
+    <form id="answerBar" class="hidden" autocomplete="off">
+      <div id="timer"><svg viewBox="0 0 44 44"><circle cx="22" cy="22" r="19" class="track"/><circle cx="22" cy="22" r="19" id="timerArc"/></svg><span id="timerNum">20</span></div>
+      <input id="answer" type="text" spellcheck="false" autocapitalize="off" autocorrect="off" maxlength="60">
+      <button id="goBtn" type="submit" data-i18n="go"></button>
+      <div id="suggest" class="hidden"><span id="suggestText"></span><button type="button" id="suggestYes"></button><button type="button" id="suggestNo"></button></div>
+    </form>
+    <div id="toast"></div>
+  </section>
+
+  <!-- ───────── ENDE ───────── -->
+  <section id="end" class="screen hidden">
+    <small class="kicker" data-i18n="endKicker"></small>
+    <h2 id="eFloor" class="h2 glow"></h2>
+    <p id="eRank" class="sub"></p>
+    <div class="endStats">
+      <div class="box"><small data-i18n="points"></small><b id="eScore" class="pink">0</b></div>
+      <div class="box"><small id="eMetricLbl"></small><b id="eMetric">0</b></div>
+      <div class="box"><small data-i18n="best"></small><b id="eBest">0</b></div>
+    </div>
+    <div id="eBoard" class="hidden"></div>
+    <ol id="ePodium" class="hidden"></ol>
+    <ol id="eList"></ol>
+    <div class="row2">
+      <button id="shareBtn" class="mid" data-i18n="share"></button>
+      <button id="againBtn" class="mid" data-i18n="again"></button>
+    </div>
+    <button class="ghost" id="endBack" data-i18n="menu"></button>
+  </section>
+</div>
+
+</body>
+</html>
