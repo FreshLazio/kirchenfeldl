@@ -1,6 +1,17 @@
 // Mehrspieler-Lobby für KIRCHENFELDL (Server-Seite). client = Objekt mit send(event, payload).
-// Mehrere Lobbys gleichzeitig (je 4-Buchstaben-Code), 1 gegen 1 oder bis zu 8 Spieler.
+// Mehrere Lobbys gleichzeitig (je 4-Buchstaben-Code), 1 gegen 1 oder bis zu 30 Spieler (ganze Schulklasse).
 import os from 'node:os';
+
+const MAX_PLAYERS = 30;
+const PALETTE = ['#ff4d79', '#5fd8ff', '#ffd166', '#7bed9f', '#c78bff', '#ff9f43', '#f8f8f8', '#ff6bd6'];
+// freie Farbe: zuerst die 8 festen, danach gut unterscheidbare (Farbkreis im goldenen Winkel)
+const hex = (h, s, l) => { const f = n => { const k = (n + h / 30) % 12, a = s * Math.min(l, 1 - l); return Math.round(255 * (l - a * Math.max(-1, Math.min(k - 3, 9 - k, 1)))).toString(16).padStart(2, '0'); }; return `#${f(0)}${f(8)}${f(4)}`; };
+const freeColor = L => {
+  const used = new Set([...L.players.values()].map(p => p.color));
+  for (const c of PALETTE) if (!used.has(c)) return c;
+  for (let k = 0; k < 200; k++) { const c = hex((k * 137.508 + 20) % 360, 0.75, k % 2 ? 0.62 : 0.72); if (!used.has(c)) return c; }
+  return null;
+};
 
 export function createLobby() {
   const lobbies = new Map();
@@ -68,11 +79,8 @@ export function createLobby() {
       if (known) { bind(L, known, client); fixHost(L); return send(L); }   // zurück (neu geladen / WLAN wieder da) → weiterspielen
       if (L.banned && L.banned.has(d.id)) return err(client, 'kicked');
       if (L.phase !== 'lobby') return err(client, 'started');
-      if (L.players.size >= (L.settings.mode === 'nearl' ? 10 : 8)) return err(client, 'full');
-      if ([...L.players.values()].some(p => p.color === d.color)) {
-        const free = ['#ff4d79', '#5fd8ff', '#ffd166', '#7bed9f', '#c78bff', '#ff9f43', '#f8f8f8', '#ff6bd6'].find(c => ![...L.players.values()].some(p => p.color === c));
-        d.color = free || d.color;
-      }
+      if (L.players.size >= MAX_PLAYERS) return err(client, 'full');
+      if ([...L.players.values()].some(p => p.color === d.color)) d.color = freeColor(L) || d.color;
       L.players.set(d.id, player(d, client)); bind(L, L.players.get(d.id), client);
       send(L);
     },
@@ -124,7 +132,7 @@ export function createLobby() {
         const kind = ['border', 'puzzle', 'more', 'rings', 'trip', 'zoom', 'radar', 'compass', 'box', 'count', 'half', 'sprint', 'pin', 'shapes'].find(k => n[k]) || 'near';
         L.settings.nearl = {
           region: ['world', 'europe', 'asia', 'africa', 'namerica', 'samerica', 'oceania', 'switzerland', 'switzerlandAll', 'italy', 'italyAll', 'germany', 'usa', 'russia'].includes(n.region) ? n.region : 'world',
-          diff: n.diff === 'hard' ? 'hard' : 'easy', shapes: kind === 'shapes', pin: kind === 'pin', sprint: kind === 'sprint', rings: kind === 'rings', trip: kind === 'trip', zoom: kind === 'zoom', radar: kind === 'radar', compass: kind === 'compass', box: kind === 'box', count: kind === 'count', half: kind === 'half', border: kind === 'border', puzzle: kind === 'puzzle', more: kind === 'more', rare: !!n.rare, teams: !!n.teams,
+          diff: n.diff === 'hard' ? 'hard' : 'easy', shapes: kind === 'shapes', pin: kind === 'pin', sprint: kind === 'sprint', rings: kind === 'rings', trip: kind === 'trip', zoom: kind === 'zoom', radar: kind === 'radar', compass: kind === 'compass', box: kind === 'box', count: kind === 'count', half: kind === 'half', border: kind === 'border', puzzle: kind === 'puzzle', more: kind === 'more', rare: false, teams: !!n.teams,   // «Selten = mehr Punkte» gibt es nicht mehr
           shapeSize: ['easy', 'medium', 'hard'].includes(n.shapeSize) ? n.shapeSize : 'medium', perRing: [1, 2, 3].includes(+n.perRing) ? +n.perRing : 2, parts: [0, 2, 3, 4].includes(+n.parts) ? +n.parts : 0, popCities: !!n.popCities, coarse: !!n.coarse, canton: Number.isInteger(+n.canton) && +n.canton >= 0 && +n.canton <= 26 ? +n.canton : 0,
           teamCount: [2, 3, 4, 5].includes(+n.teamCount) ? +n.teamCount : 2, teamScore: ['sum', 'avg', 'best', 'lives'].includes(n.teamScore) ? n.teamScore : 'lives',
           rounds: [5, 7, 10].includes(+n.rounds) ? +n.rounds : 7, time: +n.time === 0 ? 0 : Number.isFinite(+n.time) && +n.time > 0 ? Math.max(5, Math.min(600, Math.round(+n.time))) : 30, timeCustom: !!n.timeCustom,   // 0 = ohne Zeit · eigene Zahl gilt genau
