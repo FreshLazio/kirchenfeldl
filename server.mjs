@@ -14,11 +14,12 @@ import { createScores } from './scores.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url)), PUB = join(HERE, 'public');
 const PORT = +process.env.PORT || 8080;
-const lobby = createLobby();
 const scores = createScores({
   file: process.env.SCORES_FILE || join(HERE, 'data', 'scores.json'),
   upstash: { url: process.env.UPSTASH_REDIS_REST_URL, token: process.env.UPSTASH_REDIS_REST_TOKEN },
+  adminKey: process.env.KFL_ADMIN_KEY || '',   // Spielarchiv: Schlüssel nur als Umgebungsvariable beim Hoster (nie im Code – das Repo ist öffentlich)
 });
+const lobby = createLobby({ onGame: g => scores.logGame(g).catch(() => {}) });
 
 // ───────── Website: Dateien aus public/ (vorgepackt als .gz, wenn der Browser das kann) ─────────
 const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json',

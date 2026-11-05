@@ -7,7 +7,8 @@
 //       freies Spiel: GET ?free=1&kind=trip&v=russia.r5…&nick=  → { top, players, rank, mine } · GET ?free=1&all=1 · POST { free: true, kind, v, day, nick, score, dev }
 //       POST /api/scores  { kind, day, nick, score, dev }   → { ok, rank, today, best }   (dev = Zufalls-Kennung des Geräts: 1 Eintrag pro Gerät)
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { dirname } from 'node:path';
+import { dirname, join } from 'node:path';
+import { createHash, timingSafeEqual } from 'node:crypto';
 
 // nearl = Nahe Stadt · nearl-<modus> = Tages-Challenge der anderen NEARL-Modi (teilen, zoom, reise …) · quiz-<welt>
 const KIND = /^(nearl(-[a-z]{2,12})?|quiz-[a-z0-9_-]{1,30})$/;
@@ -16,17 +17,56 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const MAX = kind => (kind === 'nearl' ? 40000 : kind.startsWith('nearl-') ? 150000 : 100000);
 const KEEP_DAYS = 60, TOP = 10, ALL = 500;   // ALL: so viele Zeilen pro Modus auf der Ranglisten-Seite
 
-export function createScores({ file = null, upstash = null } = {}) {
+export function createScores({ file = null, upstash = null, adminKey = '' } = {}) {
   let data = { days: {}, best: {} }, ready = null, saveTmr = null;
   const up = upstash && upstash.url && upstash.token ? upstash : null;
+
+  // ───────── Spielarchiv (Mehrspieler): nur mit dem geheimen Schlüssel lesbar (Umgebung KFL_ADMIN_KEY – steht NIE im Code) ─────────
+  // Eigener Speicher, damit die Ranglisten klein bleiben · höchstens 300 Spiele / 1,5 MB (die ältesten fallen weg)
+  const gamesFile = file ? join(dirname(file), 'games.json') : null;
+  let games = [], gamesReady = null, gamesTmr = null;
+  const loadGames = async () => {
+    try {
+      if (up) { const r = await fetch(`${up.url}/get/kfl-games`, { headers: { Authorization: `Bearer ${up.token}` } }); if (!r.ok) throw new Error(`Upstash ${r.status}`); const j = await r.json(); if (j && j.error) throw new Error(j.error); if (j && j.result) games = JSON.parse(j.result); }
+      else if (gamesFile) games = JSON.parse(readFileSync(gamesFile, 'utf8'));
+    } catch (e) { if (up) { gamesReady = null; throw e; } /* Datei: noch nichts */ }   // Speicher nicht erreichbar: NICHT mit leerem Stand weitermachen
+    if (!Array.isArray(games)) games = [];
+  };
+  const saveGames = () => {
+    clearTimeout(gamesTmr);
+    gamesTmr = setTimeout(async () => {
+      games.sort((a, b) => a.t0 - b.t0);
+      if (games.length > 300) games = games.slice(-300);
+      let s = JSON.stringify(games);
+      while (s.length > 1500000 && games.length > 1) { games = games.slice(Math.ceil(games.length / 10)); s = JSON.stringify(games); }
+      try {
+        if (up) await fetch(`${up.url}/set/kfl-games`, { method: 'POST', headers: { Authorization: `Bearer ${up.token}` }, body: s });
+        else if (gamesFile) { mkdirSync(dirname(gamesFile), { recursive: true }); writeFileSync(gamesFile, s); }
+      } catch (e) { console.error('[scores] Archiv speichern ging nicht:', e.message); }
+    }, 5000);
+  };
+  // ein Spiel eintragen oder nachführen (gleiche id = gleiches Spiel)
+  async function logGame(g) {
+    try { gamesReady ||= loadGames(); await gamesReady; } catch (e) { console.error('[scores] Archiv nicht lesbar:', e.message); return; }
+    const i = games.findIndex(x => x.id === g.id);
+    if (i >= 0) games[i] = g; else games.push(g);
+    saveGames();
+  }
+  // Schlüssel prüfen: gleich lange Hashes vergleichen · falsche Versuche pro Adresse bremsen
+  const sha = s => createHash('sha256').update(String(s)).digest();
+  const adminOk = k => !!adminKey && timingSafeEqual(sha(k), sha(adminKey));
+  const adminFails = new Map();
+  const adminBlocked = ip => { const now = Date.now(), h = (adminFails.get(ip) || []).filter(x => now - x < 3600e3); adminFails.set(ip, h); return h.length >= 10; };
 
   async function load() {
     try {
       if (up) {
         const r = await fetch(`${up.url}/get/kfl-scores`, { headers: { Authorization: `Bearer ${up.token}` } });
-        const j = await r.json(); if (j && j.result) data = JSON.parse(j.result);
+        if (!r.ok) throw new Error(`Upstash ${r.status}`);
+        const j = await r.json(); if (j && j.error) throw new Error(j.error);
+        if (j && j.result) data = JSON.parse(j.result);
       } else if (file) data = JSON.parse(readFileSync(file, 'utf8'));
-    } catch { /* noch nichts gespeichert */ }
+    } catch (e) { if (up) throw e; /* Datei: noch nichts gespeichert */ }   // Speicher kurz weg: NIE mit leerem Stand weitermachen, das würde alle Rekorde überschreiben
     data.days ||= {}; data.best ||= {};
     // Profile: Nickname gehört einem Gerät (nicks: name → Gerät · devNick: Gerät → name) – aus alten Einträgen nachbauen
     if (!data.nicks) {
@@ -177,7 +217,7 @@ export function createScores({ file = null, upstash = null } = {}) {
 
   const json = (res, code, obj) => { res.statusCode = code; res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.setHeader('Cache-Control', 'no-store'); res.end(JSON.stringify(obj)); };
   async function handle(req, res) {
-    ready ||= load(); await ready;
+    try { ready ||= load(); await ready; } catch (e) { ready = null; console.error('[scores] Speicher nicht erreichbar:', e.message); return json(res, 503, { error: 'store' }); }
     const u = new URL(req.url, 'http://x');
     if (req.method === 'GET') {
       const kind = u.searchParams.get('kind') || '', day = u.searchParams.get('day') || '';
@@ -217,6 +257,13 @@ export function createScores({ file = null, upstash = null } = {}) {
       let d; try { d = JSON.parse(body); } catch { return json(res, 400, { error: 'bad' }); }
       const kind = String(d.kind || ''), day = String(d.day || ''), nick = cleanNick(d.nick), score = Math.round(+d.score);
       const ip = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || '?';
+      // Spielarchiv: alle Mehrspieler-Spiele, neueste zuerst – nur mit richtigem Schlüssel
+      if (d.admin !== undefined) {
+        if (adminBlocked(ip)) return json(res, 429, { error: 'slow' });
+        if (!adminOk(d.admin)) { adminFails.get(ip).push(Date.now()); return json(res, 403, { error: adminKey ? 'key' : 'off' }); }
+        try { gamesReady ||= loadGames(); await gamesReady; } catch { return json(res, 503, { error: 'store' }); }
+        return json(res, 200, { games: [...games].sort((a, b) => b.t0 - a.t0) });
+      }
       // Profil anlegen oder umbenennen
       if (d.account) {
         const dev = cleanDev(d.dev); if (!dev || !nick) return json(res, 400, { error: 'nick' });
@@ -246,5 +293,5 @@ export function createScores({ file = null, upstash = null } = {}) {
     }
     json(res, 405, { error: 'method' });
   }
-  return { handle };
+  return { handle, logGame };
 }

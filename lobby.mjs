@@ -13,12 +13,29 @@ const freeColor = L => {
   return null;
 };
 
-export function createLobby() {
+export function createLobby({ onGame = null } = {}) {
   const lobbies = new Map();
+  // Spielarchiv: Stand dieses Spiels melden (wer, wann, jede Antwort mit Punkten) – nichts von Adressen oder Geräten
+  const record = L => {
+    if (!onGame || !L.gid) return;
+    const ps = [...L.players.values()].filter(p => p.id !== L.outId), nearl = L.settings.mode === 'nearl';
+    const score = (p, r) => {   // Quiz: gleiche Antwort wie jemand anderes = halbe Punkte (wie im Spiel)
+      const a = p.answers[r]; if (!a) return 0;
+      if (nearl || !(a.idx >= 0)) return a.pts || 0;
+      return ps.some(o => o !== p && o.answers[r]?.idx === a.idx) ? Math.round((a.pts || 0) / 2) : a.pts || 0;
+    };
+    const rows = ps.map(p => {
+      const a = {}; let tot = 0;
+      for (const r of Object.keys(p.answers)) { const x = p.answers[r], s = score(p, r); tot += s; a[r] = { n: x.name, p: s, ...(x.dist != null ? { d: Math.round(x.dist) } : {}) }; }
+      return { n: p.name, c: p.color, team: L.settings.nearl?.teams ? p.team || 'A' : undefined, gone: !!p.gone, tot, a };
+    }).sort((x, y) => y.tot - x.tot);
+    // auch ohne Antworten melden: jedes gestartete Spiel steht im Archiv (wer gehostet hat, wann)
+    onGame({ id: L.gid, code: L.code, t0: L.t0, t1: Date.now(), done: L.phase === 'done', mode: L.settings.mode, title: L.title || '', labels: L.labels || [], rounds: L.qs.length, host: L.hostName || '', led: !!L.outId, players: rows });
+  };
   const ips = () => Object.values(os.networkInterfaces()).flat().filter(a => a && a.family === 'IPv4' && !a.internal).map(a => a.address);
 
   const view = L => ({
-    code: L.code, hostId: L.hostId, phase: L.phase, settings: L.settings,
+    code: L.code, hostId: L.hostId, outId: L.outId || null, phase: L.phase, settings: L.settings,
     teamNames: L.teamNames || {}, qs: L.qs, shapes: L.shapes || null, sprints: L.sprints || null, seen: L.seen || [], seenCities: L.seenCities || [], round: L.round, roundStart: L.roundStart, now: Date.now(), ips: ips(),
     players: [...L.players.values()].map(({ client, tmr, ...p }) => p),
   });
@@ -61,7 +78,9 @@ export function createLobby() {
   };
   const err = (client, msg) => client.send('kfl:error', { msg });
   const clean = s => String(s || '').replace(/[^\p{L}\p{N} ._-]/gu, '').trim().slice(0, 14) || 'Gast';
-  const player = (d, client) => ({ id: d.id, name: clean(d.name), color: /^#[0-9a-f]{6}$/i.test(d.color) ? d.color : '#ff4d79', team: 'A', answers: {}, client });
+  // Spielfigur (Tier/Kopf/Ding): nur kurze Kennungen, gezeichnet wird im Browser
+  const cleanAv = v => { if (!v || typeof v !== 'object') return null; const k = x => (typeof x === 'string' && /^[a-z0-9]{1,12}$/.test(x) ? x : ''); return { a: k(v.a), h: k(v.h), x: k(v.x), b: k(v.b) }; };
+  const player = (d, client) => ({ id: d.id, name: clean(d.name), color: /^#[0-9a-f]{6}$/i.test(d.color) ? d.color : '#ff4d79', av: cleanAv(d.av), team: 'A', answers: {}, client });
 
   const handlers = {
     'kfl:create'(d, client) {
@@ -90,6 +109,7 @@ export function createLobby() {
       if (d.name) p.name = clean(d.name);
       if (/^#[0-9a-f]{6}$/i.test(d.color || '') && ![...L.players.values()].some(o => o !== p && o.color === d.color)) p.color = d.color;
       if (d.team === 'A' || d.team === 'B') p.team = d.team;
+      if (d.av) p.av = cleanAv(d.av);
       send(L);
     },
     // Host wirft jemanden raus (darf danach nicht mehr in diese Lobby)
@@ -132,10 +152,11 @@ export function createLobby() {
         const kind = ['border', 'puzzle', 'more', 'rings', 'trip', 'zoom', 'radar', 'compass', 'box', 'count', 'half', 'sprint', 'pin', 'shapes'].find(k => n[k]) || 'near';
         L.settings.nearl = {
           region: ['world', 'europe', 'asia', 'africa', 'namerica', 'samerica', 'oceania', 'switzerland', 'switzerlandAll', 'italy', 'italyAll', 'germany', 'usa', 'russia'].includes(n.region) ? n.region : 'world',
+          hostOut: !!n.hostOut, autoNext: [5, 10, 20].includes(+n.autoNext) ? +n.autoNext : 0,   // Lehrperson leitet nur · nach der Auflösung automatisch weiter
           diff: n.diff === 'hard' ? 'hard' : 'easy', shapes: kind === 'shapes', pin: kind === 'pin', sprint: kind === 'sprint', rings: kind === 'rings', trip: kind === 'trip', zoom: kind === 'zoom', radar: kind === 'radar', compass: kind === 'compass', box: kind === 'box', count: kind === 'count', half: kind === 'half', border: kind === 'border', puzzle: kind === 'puzzle', more: kind === 'more', rare: false, teams: !!n.teams,   // «Selten = mehr Punkte» gibt es nicht mehr
           shapeSize: ['easy', 'medium', 'hard'].includes(n.shapeSize) ? n.shapeSize : 'medium', perRing: [1, 2, 3].includes(+n.perRing) ? +n.perRing : 2, parts: [0, 2, 3, 4].includes(+n.parts) ? +n.parts : 0, popCities: !!n.popCities, coarse: !!n.coarse, canton: Number.isInteger(+n.canton) && +n.canton >= 0 && +n.canton <= 26 ? +n.canton : 0,
           teamCount: [2, 3, 4, 5].includes(+n.teamCount) ? +n.teamCount : 2, teamScore: ['sum', 'avg', 'best', 'lives'].includes(n.teamScore) ? n.teamScore : 'lives',
-          rounds: [5, 7, 10].includes(+n.rounds) ? +n.rounds : 7, time: +n.time === 0 ? 0 : Number.isFinite(+n.time) && +n.time > 0 ? Math.max(5, Math.min(600, Math.round(+n.time))) : 30, timeCustom: !!n.timeCustom,   // 0 = ohne Zeit · eigene Zahl gilt genau
+          rounds: Number.isInteger(+n.rounds) && +n.rounds >= 1 && +n.rounds <= 20 ? +n.rounds : 7, time: +n.time === 0 ? 0 : Number.isFinite(+n.time) && +n.time > 0 ? Math.max(5, Math.min(600, Math.round(+n.time))) : 30, timeCustom: !!n.timeCustom,   // 0 = ohne Zeit · eigene Zahl gilt genau
         };
         // weniger Teams: wer in einem weggefallenen Team war, kommt ins letzte noch vorhandene
         const letters = ['A', 'B', 'C', 'D', 'E'].slice(0, L.settings.nearl.teamCount);
@@ -164,6 +185,11 @@ export function createLobby() {
       else L.seen = [...(L.seen || []), ...L.qs].slice(-400); // Fragen dieser Lobby merken → nächste Runde andere
       L.phase = 'play'; L.round = 0; L.roundStart = Date.now() + 4500;
       for (const p of L.players.values()) p.answers = {};
+      // «nur leiten»: Host zählt nicht als Spieler · Archiv: neues Spiel
+      L.outId = nearl && L.settings.nearl?.hostOut ? L.hostId : null;
+      L.gid = `${Date.now().toString(36)}-${L.code}`; L.t0 = Date.now(); L.hostName = L.players.get(L.hostId)?.name || '';
+      L.title = String(d.title || '').slice(0, 120); L.labels = Array.isArray(d.labels) ? d.labels.slice(0, 20).map(x => String(x).slice(0, 120)) : [];
+      record(L);   // sofort im Archiv: wer wann was gehostet hat – auch wenn danach niemand antwortet
       send(L);
     },
     'kfl:answer'(d) {
@@ -186,6 +212,15 @@ export function createLobby() {
           .filter(f => f.lat != null && f.lon != null);
         p.answers[d.round].level = num(a.level, 0, 9) || 0;
       }
+      record(L);
+      send(L);
+    },
+    // Host beendet die Runde (ohne Zeit oder wenn jemand nicht mehr antwortet): wer noch nichts hat, bekommt 0
+    'kfl:force'(d) {
+      const L = lobbies.get(d.code);
+      if (!L || L.hostId !== d.id || L.phase !== 'play' || d.round !== L.round) return;
+      for (const p of L.players.values()) if (!p.gone && !p.answers[d.round]) p.answers[d.round] = { idx: -1, name: '—', tier: -1, pts: 0, lat: null, lon: null, dist: null, mult: null };
+      record(L);
       send(L);
     },
     // Sprint/Ringe im Teammodus: gefundene Stadt sofort an die Teamkameraden (man sammelt zusammen)
@@ -209,12 +244,14 @@ export function createLobby() {
       if (!L || L.hostId !== d.id || L.phase !== 'play' || d.round !== L.round) return;
       L.round++;
       if (L.round >= L.qs.length || d.end) L.phase = 'done';   // NEARL-Teams: Ende, sobald ein Team keine Leben mehr hat
-      else L.roundStart = Date.now() + 1200;
+      else L.roundStart = Date.now() + (L.settings.mode === 'nearl' ? 5000 : 1200);   // NEARL: kurz der Zwischenstand
+      record(L);
       send(L);
     },
     'kfl:again'(d) {
       const L = lobbies.get(d.code);
       if (!L || L.hostId !== d.id) return;
+      record(L); L.gid = null; L.outId = null;
       L.phase = 'lobby'; L.round = -1; L.qs = [];
       for (const p of [...L.players.values()]) { if (p.gone) L.players.delete(p.id); else p.answers = {}; }   // wer weg ist, fliegt bei der Revanche aus der Liste
       send(L);
