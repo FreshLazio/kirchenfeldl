@@ -277,7 +277,8 @@ export function createScores({ file = null, upstash = null, adminKey = '' } = {}
         const v = String(d.v || '');
         if (!FKIND.test(kind) || !FV.test(v) || !DAY.test(day) || !dayOk(day)) return json(res, 400, { error: 'bad' });
         if (!nick) return json(res, 400, { error: 'nick' });
-        if (!Number.isFinite(score) || score < 0 || score > 200000) return json(res, 400, { error: 'score' });
+        // LEARNL: Prozent und Zeit stecken zusammen in einer Zahl, darum grösser (siehe learnlScore in board.js)
+        if (!Number.isFinite(score) || score < 0 || score > (kind === 'learnl' ? 11100000 : 200000)) return json(res, 400, { error: 'score' });
         if (freeLimited(ip)) return json(res, 429, { error: 'slow' });
         const r = freeAdd(kind, v, nick, score, cleanDev(d.dev), day, cleanLog(d.log));
         return json(res, r.error ? 409 : 200, { ...r, ...freeView(kind, v, nick) });
