@@ -101,6 +101,9 @@ export function createLobby({ onGame = null } = {}) {
       if (L.players.size >= MAX_PLAYERS) return err(client, 'full');
       if ([...L.players.values()].some(p => p.color === d.color)) d.color = freeColor(L) || d.color;
       L.players.set(d.id, player(d, client)); bind(L, L.players.get(d.id), client);
+      // Teams schon an: wer neu kommt, geht ins kleinste Team
+      const ns = L.settings.mode === 'nearl' ? L.settings.nearl : null;
+      if (ns?.teams) { const list = ['A', 'B', 'C', 'D', 'E'].slice(0, ns.teamCount), size = k => [...L.players.values()].filter(p => p.id !== d.id && !(ns.hostOut && p.id === L.hostId) && (p.team || 'A') === k).length; L.players.get(d.id).team = list.reduce((a, b) => (size(b) < size(a) ? b : a)); }
       send(L);
     },
     'kfl:profile'(d) {
@@ -131,11 +134,13 @@ export function createLobby({ onGame = null } = {}) {
       p.team = ['A', 'B', 'C', 'D', 'E'].includes(d.team) ? d.team : 'A';
       send(L);
     },
-    // Teamname: Host für alle Teams, sonst jeder für sein eigenes Team (leer = wieder «Team A»)
+    // Teamname: Host für alle Teams, sonst der Teamführer (erste Person im Team) (leer = wieder «Team A»)
     'kfl:teamname'(d) {
       const L = lobbies.get(d.code); const p = L?.players.get(d.id);
       const k = ['A', 'B', 'C', 'D', 'E'].includes(d.team) ? d.team : null;
-      if (!p || !k || L.phase !== 'lobby' || (L.hostId !== d.id && p.team !== k)) return;
+      const out = L?.settings.nearl?.hostOut ? L.hostId : null;
+      const captain = L && [...L.players.values()].find(o => o.id !== out && (o.team || 'A') === k);
+      if (!p || !k || L.phase !== 'lobby' || (L.hostId !== d.id && captain?.id !== d.id)) return;
       const name = String(d.name || '').replace(/[^\p{L}\p{N}\p{Emoji_Presentation} ._!-]/gu, '').trim().slice(0, 18);
       L.teamNames ||= {};
       if (name) L.teamNames[k] = name; else delete L.teamNames[k];
@@ -147,7 +152,7 @@ export function createLobby({ onGame = null } = {}) {
       if (typeof d.world === 'string') L.settings.world = d.world.slice(0, 20);
       if (d.mode === 'quiz' || d.mode === 'nearl') L.settings.mode = d.mode;
       if (d.nearl && typeof d.nearl === 'object') {
-        const n = d.nearl;
+        const n = d.nearl, was = L.settings.nearl;
         // genau ein Modus: Ringe > Reise > Zoom > Sprint > Nadel > Formen > nahe Stadt
         const kind = ['border', 'puzzle', 'more', 'rings', 'trip', 'zoom', 'radar', 'compass', 'box', 'count', 'half', 'sprint', 'pin', 'shapes'].find(k => n[k]) || 'near';
         L.settings.nearl = {
@@ -155,12 +160,15 @@ export function createLobby({ onGame = null } = {}) {
           hostOut: !!n.hostOut, autoNext: [5, 10, 20].includes(+n.autoNext) ? +n.autoNext : 0,   // Lehrperson leitet nur · nach der Auflösung automatisch weiter
           diff: n.diff === 'hard' ? 'hard' : 'easy', shapes: kind === 'shapes', pin: kind === 'pin', sprint: kind === 'sprint', rings: kind === 'rings', trip: kind === 'trip', zoom: kind === 'zoom', radar: kind === 'radar', compass: kind === 'compass', box: kind === 'box', count: kind === 'count', half: kind === 'half', border: kind === 'border', puzzle: kind === 'puzzle', more: kind === 'more', rare: false, teams: !!n.teams,   // «Selten = mehr Punkte» gibt es nicht mehr
           shapeSize: ['easy', 'medium', 'hard'].includes(n.shapeSize) ? n.shapeSize : 'medium', perRing: [1, 2, 3].includes(+n.perRing) ? +n.perRing : 2, parts: [0, 2, 3, 4].includes(+n.parts) ? +n.parts : 0, popCities: !!n.popCities, coarse: !!n.coarse, canton: Number.isInteger(+n.canton) && +n.canton >= 0 && +n.canton <= 26 ? +n.canton : 0,
-          teamCount: [2, 3, 4, 5].includes(+n.teamCount) ? +n.teamCount : 2, teamScore: ['sum', 'avg', 'best', 'lives'].includes(n.teamScore) ? n.teamScore : 'lives',
+          teamCount: [2, 3, 4, 5].includes(+n.teamCount) ? +n.teamCount : 2, teamScore: ['avg', 'best', 'lives'].includes(n.teamScore) ? n.teamScore : 'avg',
           rounds: Number.isInteger(+n.rounds) && +n.rounds >= 1 && +n.rounds <= 20 ? +n.rounds : 7, time: +n.time === 0 ? 0 : Number.isFinite(+n.time) && +n.time > 0 ? Math.max(5, Math.min(600, Math.round(+n.time))) : 30, timeCustom: !!n.timeCustom,   // 0 = ohne Zeit · eigene Zahl gilt genau
         };
         // weniger Teams: wer in einem weggefallenen Team war, kommt ins letzte noch vorhandene
         const letters = ['A', 'B', 'C', 'D', 'E'].slice(0, L.settings.nearl.teamCount);
         for (const p of L.players.values()) if (!letters.includes(p.team)) p.team = letters[letters.length - 1];
+        // Teams neu an, andere Anzahl oder Lehrperson leitet neu: gleichmässig verteilen, damit nie alle in Team A stehen
+        const t = L.settings.nearl;
+        if (t.teams && (!was?.teams || was.teamCount !== t.teamCount || !!was.hostOut !== t.hostOut)) [...L.players.values()].filter(p => !(t.hostOut && p.id === L.hostId)).forEach((p, i) => { p.team = letters[i % letters.length]; });
       }
       if (Array.isArray(d.cats) || d.cats === null) L.settings.cats = d.cats ? d.cats.slice(0, 120).map(String) : null;
       if (d.opts && typeof d.opts === 'object') {
@@ -208,7 +216,8 @@ export function createLobby({ onGame = null } = {}) {
         lat: num(a.lat, -90, 90), lon: num(a.lon, -180, 180), dist: num(a.dist, 0, 40000), mult: num(a.mult, 1, 2) };
       // Sprint/Ringe: welche Städte (und wer sie gefunden hat) – für die Auflösung
       if (Array.isArray(a.found)) {
-        p.answers[d.round].found = a.found.slice(0, 60).map(f => ({ k: String(f.k || '').slice(0, 80), n: String(f.n || '').slice(0, 60), lat: num(f.lat, -90, 90), lon: num(f.lon, -180, 180), l: num(f.l, 0, 9) || 0, by: L.players.has(f.by) ? f.by : d.id }))
+        p.answers[d.round].found = a.found.slice(0, 60).map(f => ({ k: String(f.k || '').slice(0, 80), n: String(f.n || '').slice(0, 60), lat: num(f.lat, -90, 90), lon: num(f.lon, -180, 180), l: num(f.l, 0, 9) || 0, by: L.players.has(f.by) ? f.by : d.id,
+          d: num(f.d, 0, 40000), p: num(f.p, 0, 10000), tla: num(f.tla, -90, 90), tlo: num(f.tlo, -180, 180), km: num(f.km, 0, 40000), deg: num(f.deg, 0, 360) }))   // Kompass/Radar: Etappen-Details für die Auflösung
           .filter(f => f.lat != null && f.lon != null);
         p.answers[d.round].level = num(a.level, 0, 9) || 0;
       }
