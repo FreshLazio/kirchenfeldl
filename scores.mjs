@@ -167,7 +167,10 @@ export function createScores({ file = null, upstash = null, adminKey = '' } = {}
     return { ok: true, renamed: !!cur };
   }
   const freeHits = new Map();
-  const freeLimited = ip => { const now = Date.now(), h = (freeHits.get(ip) || []).filter(x => now - x < 3600e3); h.push(now); freeHits.set(ip, h); if (freeHits.size > 50000) freeHits.clear(); return h.length > 120; };
+  // Eine ganze Schule teilt sich eine Adresse: 120 pro Stunde waren nach einer Lektion weg, danach kam niemand mehr in die Rangliste.
+  // Darum: pro Gerät 120 pro Stunde, pro Adresse erst ab 3000.
+  const freeHit = (k, max) => { const now = Date.now(), h = (freeHits.get(k) || []).filter(x => now - x < 3600e3); h.push(now); freeHits.set(k, h); return h.length > max; };
+  const freeLimited = (ip, dev) => { if (freeHits.size > 50000) freeHits.clear(); const a = freeHit(`ip|${ip}`, 3000), b = dev ? freeHit(`dev|${dev}`, 120) : false; return a || b; };
   const FKIND = /^[a-z]{2,12}$/, FV = /^[A-Za-z0-9.-]{1,80}$/;
   function save() {
     clearTimeout(saveTmr);
@@ -207,11 +210,11 @@ export function createScores({ file = null, upstash = null, adminKey = '' } = {}
     return { ok: true, rank: list.findIndex(e => e.n === nick) + 1 };
   }
 
-  // Bremse: pro Adresse höchstens 20 Einträge pro Stunde · und pro Adresse + Modus + Tag höchstens 40
+  // Bremse: pro Adresse höchstens 600 Einträge pro Stunde · und pro Adresse + Modus + Tag höchstens 300 (pro Gerät gilt ohnehin nur 1 Tageseintrag)
   // (eine ganze Schulklasse teilt sich oft eine Adresse – darum nicht 1; Adressen werden nur im Speicher gezählt, nie gespeichert)
   const hits = new Map(), perDay = new Map();
-  const limited = ip => { const now = Date.now(), h = (hits.get(ip) || []).filter(x => now - x < 3600e3); h.push(now); hits.set(ip, h); return h.length > 20; };
-  const dayFull = (ip, kind, day) => { const k = `${ip}|${kind}|${day}`; if (perDay.size > 50000) perDay.clear(); return (perDay.get(k) || 0) >= 40; };
+  const limited = ip => { const now = Date.now(), h = (hits.get(ip) || []).filter(x => now - x < 3600e3); h.push(now); hits.set(ip, h); return h.length > 600; };   // war 20: zu wenig für eine Schule hinter einer Adresse
+  const dayFull = (ip, kind, day) => { const k = `${ip}|${kind}|${day}`; if (perDay.size > 50000) perDay.clear(); return (perDay.get(k) || 0) >= 300; };
   const dayCount = (ip, kind, day) => { const k = `${ip}|${kind}|${day}`; perDay.set(k, (perDay.get(k) || 0) + 1); };
   const cleanDev = s => (/^[a-z0-9]{12,40}$/.test(String(s || '')) ? String(s) : '');
 
@@ -279,7 +282,7 @@ export function createScores({ file = null, upstash = null, adminKey = '' } = {}
         if (!nick) return json(res, 400, { error: 'nick' });
         // LEARNL: Prozent und Zeit stecken zusammen in einer Zahl, darum grösser (siehe learnlScore in board.js)
         if (!Number.isFinite(score) || score < 0 || score > (kind === 'learnl' ? 11100000 : 200000)) return json(res, 400, { error: 'score' });
-        if (freeLimited(ip)) return json(res, 429, { error: 'slow' });
+        if (freeLimited(ip, cleanDev(d.dev))) return json(res, 429, { error: 'slow' });
         const r = freeAdd(kind, v, nick, score, cleanDev(d.dev), day, cleanLog(d.log));
         return json(res, r.error ? 409 : 200, { ...r, ...freeView(kind, v, nick) });
       }
