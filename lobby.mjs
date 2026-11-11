@@ -80,6 +80,17 @@ export function createLobby({ onGame = null } = {}) {
   const clean = s => String(s || '').replace(/[^\p{L}\p{N} ._-]/gu, '').trim().slice(0, 14) || 'Gast';
   // Spielfigur (Tier/Kopf/Ding): nur kurze Kennungen, gezeichnet wird im Browser
   const cleanAv = v => { if (!v || typeof v !== 'object') return null; const k = x => (typeof x === 'string' && /^[a-z0-9]{1,12}$/.test(x) ? x : ''); return { a: k(v.a), h: k(v.h), x: k(v.x), b: k(v.b) }; };
+  // LEARNL: alle spielen dasselbe Land, dieselbe Art und dieselbe Reihenfolge
+  const learnlSet = s => {
+    const x = s && typeof s === 'object' ? s : {};
+    return {
+      cc: /^(?:[A-Z]{2}(?:-[A-Z0-9]{2,3})?|WORLD(?:-[A-Z]{2})?|GB-ALL)$/.test(x.cc) ? x.cc : 'CH',
+      what: ['prov', 'cap', 'big', 'top'].includes(x.what) ? x.what : 'prov',
+      how: ['all', 'name', 'click'].includes(x.how) ? x.how : 'all',
+    };
+  };
+  // Zwischenstand (wie viele schon gefunden) höchstens 3× pro Sekunde an alle
+  const sendSoon = L => { if (L.progTmr) return; L.progTmr = setTimeout(() => { L.progTmr = null; send(L); }, 350); };
   const player = (d, client) => ({ id: d.id, name: clean(d.name), color: /^#[0-9a-f]{6}$/i.test(d.color) ? d.color : '#ff4d79', av: cleanAv(d.av), team: 'A', answers: {}, client });
 
   const handlers = {
@@ -89,6 +100,7 @@ export function createLobby({ onGame = null } = {}) {
       L.players.set(d.id, player(d, client)); bind(L, L.players.get(d.id), client);
       lobbies.set(code, L);
       if (d.mode === 'nearl') { L.settings.mode = 'nearl'; if (d.nearl) handlers['kfl:settings']({ code, id: d.id, nearl: d.nearl }); }
+      if (d.mode === 'learnl') { L.settings.mode = 'learnl'; L.settings.learnl = learnlSet(d.learnl); }
       send(L);
     },
     'kfl:join'(d, client) {
@@ -150,7 +162,8 @@ export function createLobby({ onGame = null } = {}) {
       const L = lobbies.get(d.code);
       if (!L || L.hostId !== d.id || L.phase !== 'lobby') return;
       if (typeof d.world === 'string') L.settings.world = d.world.slice(0, 20);
-      if (d.mode === 'quiz' || d.mode === 'nearl') L.settings.mode = d.mode;
+      if (d.mode === 'quiz' || d.mode === 'nearl' || d.mode === 'learnl') L.settings.mode = d.mode;
+      if (d.learnl && typeof d.learnl === 'object') L.settings.learnl = learnlSet(d.learnl);
       if (d.nearl && typeof d.nearl === 'object') {
         const n = d.nearl, was = L.settings.nearl;
         // genau ein Modus: Ringe > Reise > Zoom > Sprint > Nadel > Formen > nahe Stadt
@@ -190,9 +203,9 @@ export function createLobby({ onGame = null } = {}) {
       if (Array.isArray(d.shapes)) L.shapes = d.shapes.slice(0, 20); else L.shapes = null;
       L.sprints = Array.isArray(d.sprints) ? d.sprints.slice(0, 20) : null;   // Kreis-Sprint: Kreise
       if (nearl) L.seenCities = [...(L.seenCities || []), ...L.qs].slice(-400);
-      else L.seen = [...(L.seen || []), ...L.qs].slice(-400); // Fragen dieser Lobby merken → nächste Runde andere
+      else if (L.settings.mode !== 'learnl') L.seen = [...(L.seen || []), ...L.qs].slice(-400); // Fragen dieser Lobby merken → nächste Runde andere
       L.phase = 'play'; L.round = 0; L.roundStart = Date.now() + 4500;
-      for (const p of L.players.values()) p.answers = {};
+      for (const p of L.players.values()) { p.answers = {}; delete p.prog; }
       // «nur leiten»: Host zählt nicht als Spieler · Archiv: neues Spiel
       L.outId = nearl && L.settings.nearl?.hostOut ? L.hostId : null;
       L.gid = `${Date.now().toString(36)}-${L.code}`; L.t0 = Date.now(); L.hostName = L.players.get(L.hostId)?.name || '';
@@ -221,8 +234,23 @@ export function createLobby({ onGame = null } = {}) {
           .filter(f => f.lat != null && f.lon != null);
         p.answers[d.round].level = num(a.level, 0, 9) || 0;
       }
+      // LEARNL: Prozent, Zeit, wie viele gefunden, ganz fertig oder aufgegeben
+      if (L.settings.mode === 'learnl') {
+        const x = p.answers[d.round];
+        x.lp = num(a.lp, 0, 100) || 0; x.ls = num(a.ls, 0, 86400) || 0; x.ln = Math.round(num(a.ln, 0, 5000) || 0); x.of = Math.round(num(a.of, 0, 5000) || 0); x.done = !!a.done;
+        p.prog = { n: x.ln, of: x.of, pct: x.lp, end: true };
+      }
       record(L);
       send(L);
+    },
+    // LEARNL: Zwischenstand während dem Spiel (wie viele schon gefunden)
+    'kfl:prog'(d) {
+      const L = lobbies.get(d.code); const p = L?.players.get(d.id);
+      if (!p || L.phase !== 'play' || L.settings.mode !== 'learnl' || p.answers[L.round]) return;
+      const n = Math.round(+d.n), of = Math.round(+d.of), pct = +d.pct;
+      if (!(n >= 0 && n <= 5000 && of >= 0 && of <= 5000 && pct >= 0 && pct <= 100)) return;
+      p.prog = { n, of, pct: Math.round(pct) };
+      sendSoon(L);
     },
     // Host beendet die Runde (ohne Zeit oder wenn jemand nicht mehr antwortet): wer noch nichts hat, bekommt 0
     'kfl:force'(d) {
@@ -262,7 +290,7 @@ export function createLobby({ onGame = null } = {}) {
       if (!L || L.hostId !== d.id) return;
       record(L); L.gid = null; L.outId = null;
       L.phase = 'lobby'; L.round = -1; L.qs = [];
-      for (const p of [...L.players.values()]) { if (p.gone) L.players.delete(p.id); else p.answers = {}; }   // wer weg ist, fliegt bei der Revanche aus der Liste
+      for (const p of [...L.players.values()]) { if (p.gone) L.players.delete(p.id); else { p.answers = {}; delete p.prog; } }   // wer weg ist, fliegt bei der Revanche aus der Liste
       send(L);
     },
     'kfl:leave'(d) {
