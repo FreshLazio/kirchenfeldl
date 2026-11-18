@@ -30,7 +30,7 @@ export function createLobby({ onGame = null } = {}) {
       return { n: p.name, c: p.color, team: L.settings.nearl?.teams ? p.team || 'A' : undefined, gone: !!p.gone, tot, a };
     }).sort((x, y) => y.tot - x.tot);
     // auch ohne Antworten melden: jedes gestartete Spiel steht im Archiv (wer gehostet hat, wann)
-    onGame({ id: L.gid, code: L.code, t0: L.t0, t1: Date.now(), done: L.phase === 'done', mode: L.settings.mode, title: L.title || '', labels: L.labels || [], rounds: L.qs.length, host: L.hostName || '', led: !!L.outId, players: rows });
+    onGame({ id: L.gid, code: L.code, t0: L.t0, t1: Date.now(), done: L.phase === 'done', mode: L.settings.mode, title: L.title || '', labels: L.labels || [], rounds: L.qs.length, host: L.hostName || '', led: !!L.outId, ...(nearl && L.settings.nearl?.teams ? { teams: { score: L.settings.nearl.teamScore || 'avg', names: L.teamNames || {} } } : {}), players: rows });
   };
   const ips = () => Object.values(os.networkInterfaces()).flat().filter(a => a && a.family === 'IPv4' && !a.internal).map(a => a.address);
 
@@ -171,7 +171,7 @@ export function createLobby({ onGame = null } = {}) {
         L.settings.nearl = {
           region: ['world', 'europe', 'asia', 'africa', 'namerica', 'samerica', 'oceania', 'switzerland', 'switzerlandAll', 'italy', 'italyAll', 'germany', 'usa', 'russia'].includes(n.region) ? n.region : 'world',
           hostOut: !!n.hostOut, autoNext: [5, 10, 20].includes(+n.autoNext) ? +n.autoNext : 0,   // Lehrperson leitet nur · nach der Auflösung automatisch weiter
-          diff: n.diff === 'hard' ? 'hard' : 'easy', shapes: kind === 'shapes', pin: kind === 'pin', sprint: kind === 'sprint', rings: kind === 'rings', trip: kind === 'trip', zoom: kind === 'zoom', radar: kind === 'radar', compass: kind === 'compass', box: kind === 'box', count: kind === 'count', half: kind === 'half', border: kind === 'border', puzzle: kind === 'puzzle', more: kind === 'more', rare: false, teams: !!n.teams,   // «Selten = mehr Punkte» gibt es nicht mehr
+          diff: n.diff === 'hard' ? 'hard' : 'easy', shapes: kind === 'shapes', pin: kind === 'pin', sprint: kind === 'sprint', rings: kind === 'rings', trip: kind === 'trip', tripEasy: kind === 'trip' && !!n.tripEasy, zoom: kind === 'zoom', radar: kind === 'radar', compass: kind === 'compass', box: kind === 'box', count: kind === 'count', half: kind === 'half', border: kind === 'border', puzzle: kind === 'puzzle', more: kind === 'more', rare: false, teams: !!n.teams, free: !!n.free,   // «Selten = mehr Punkte» gibt es nicht mehr · free = jede Stadt darf mehrmals genannt werden
           shapeSize: ['easy', 'medium', 'hard'].includes(n.shapeSize) ? n.shapeSize : 'medium', perRing: [1, 2, 3].includes(+n.perRing) ? +n.perRing : 2, parts: [0, 2, 3, 4].includes(+n.parts) ? +n.parts : 0, popCities: !!n.popCities, coarse: !!n.coarse, canton: Number.isInteger(+n.canton) && +n.canton >= 0 && +n.canton <= 26 ? +n.canton : 0,
           teamCount: [2, 3, 4, 5].includes(+n.teamCount) ? +n.teamCount : 2, teamScore: ['avg', 'best', 'lives'].includes(n.teamScore) ? n.teamScore : 'avg',
           rounds: Number.isInteger(+n.rounds) && +n.rounds >= 1 && +n.rounds <= 20 ? +n.rounds : 7, time: +n.time === 0 ? 0 : Number.isFinite(+n.time) && +n.time > 0 ? Math.max(5, Math.min(600, Math.round(+n.time))) : 30, timeCustom: !!n.timeCustom,   // 0 = ohne Zeit · eigene Zahl gilt genau
@@ -219,7 +219,7 @@ export function createLobby({ onGame = null } = {}) {
       const a = d.ans || {};
       // NEARL: jede Stadt nur einmal pro Runde – wer zuerst kommt; die anderen müssen eine andere finden
       const ns = L.settings.nearl || {};
-      if (L.settings.mode === 'nearl' && !(ns.pin || ns.sprint || ns.rings || ns.trip || ns.zoom || ns.radar || ns.compass || ns.box || ns.count || ns.half || ns.border || ns.puzzle || ns.more) && a.name && a.name !== '—') {   // Nadel-Modus: alle setzen ihre eigene Nadel
+      if (L.settings.mode === 'nearl' && !ns.free && !(ns.pin || ns.sprint || ns.rings || ns.trip || ns.zoom || ns.radar || ns.compass || ns.box || ns.count || ns.half || ns.border || ns.puzzle || ns.more) && a.name && a.name !== '—') {   // Nadel-Modus: alle setzen ihre eigene Nadel
         const k = Number.isInteger(a.idx) && a.idx >= 0 ? 'i' + a.idx : 'n' + String(a.name).toLowerCase();
         const taken = [...L.players.values()].some(o => { const b = o.answers[d.round]; return b && b.name !== '—' && (b.idx >= 0 ? 'i' + b.idx : 'n' + b.name.toLowerCase()) === k; });
         if (taken) { try { p.client?.send('kfl:taken', { code: L.code, round: d.round, name: String(a.name).slice(0, 60) }); } catch { /* weg */ } return; }

@@ -1,0 +1,71 @@
+WEBSITE AKTUALISIEREN – Schritt für Schritt
+
+1. Neue Dateien in public/assets hochladen: https://github.com/FreshLazio/kirchenfeldl/upload/main/public/assets
+   Aus dem Ordner online\public\assets diese Dateien hineinziehen (bei grossen Dateien einzeln oder zu zweit):
+   - index-Bik6j3fT.css  (0.2 MB)
+   - index-Bik6j3fT.css.gz  (0.0 MB)
+   - index-BsY0KT48.js  (2.0 MB)
+   - index-BsY0KT48.js.gz  (0.8 MB)
+   Dann unten «Commit changes».
+
+2. Andere Dateien in public hochladen: https://github.com/FreshLazio/kirchenfeldl/upload/main/public
+   Aus online\public alle Dateien AUSSER index.html und index.html.gz (und ausser dem Ordner assets und learnl):
+   (Wenn sich nichts daran geändert hat, kannst du diesen Schritt überspringen.)
+
+3. Server-Dateien (nur falls geändert): https://github.com/FreshLazio/kirchenfeldl/upload/main
+   Aus online\ : lobby.mjs, scores.mjs, server.mjs, package.json
+
+4. ZULETZT index.html + index.html.gz hochladen: https://github.com/FreshLazio/kirchenfeldl/upload/main/public
+
+5. Freiwillig: alte Dateien auf GitHub löschen. Sie stören die Website nicht, machen das Repo nur grösser.
+   (in https://github.com/FreshLazio/kirchenfeldl/tree/main/public/assets die Datei öffnen → ⋯ → Delete file):
+   - data-fragen-BwNGGTrQ.js
+   - data-fragen-BwNGGTrQ.js.gz
+   - data-geo-BbpGxfW3.js
+   - data-geo-BbpGxfW3.js.gz
+   - index-3AqpARC_.js
+   - index-3AqpARC_.js.gz
+   - index-B-57J06T.css
+   - index-B-57J06T.css.gz
+   - index-BJTmzOwR.js
+   - index-BJTmzOwR.js.gz
+   - index-BJwzbwVl.css
+   - index-BJwzbwVl.css.gz
+   - index-BbDk-6Wn.js
+   - index-BbDk-6Wn.js.gz
+   - index-Bp4e4dhB.css
+   - index-Bp4e4dhB.css.gz
+   - index-BvsnnXWi.js
+   - index-BvsnnXWi.js.gz
+   - index-CDetWiie.js
+   - index-CDetWiie.js.gz
+   - index-CJsVPdXq.js
+   - index-CJsVPdXq.js.gz
+   - index-CUMus9tW.css
+   - index-CUMus9tW.css.gz
+   - index-Chnl_vwm.css
+   - index-Chnl_vwm.css.gz
+   - index-Cm-SPm49.css
+   - index-Cm-SPm49.css.gz
+   - index-Cop3BwGZ.css
+   - index-Cop3BwGZ.css.gz
+   - index-CphecycL.js
+   - index-CphecycL.js.gz
+   - index-CvUcIqjd.js
+   - index-CvUcIqjd.js.gz
+   - index-D2I6Obxc.js
+   - index-D2I6Obxc.js.gz
+   - index-D7St2PCd.css
+   - index-D7St2PCd.css.gz
+   - index-D9rHJiUW.css
+   - index-D9rHJiUW.css.gz
+   - index-DNxh26c4.js
+   - index-DNxh26c4.js.gz
+   - index-rJv_sk0Q.css
+   - index-rJv_sk0Q.css.gz
+   - lobby.mjs
+   - package.json
+   - scores.mjs
+   - server.mjs
+
+6. Render baut danach selbst neu (1–3 Minuten): https://kirchenfeldl.onrender.com
